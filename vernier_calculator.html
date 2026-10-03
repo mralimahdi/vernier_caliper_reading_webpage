@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vernier Caliper Calculator</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, Arial, sans-serif; background:#eef1f5; margin:0; padding:24px; color:#1f2937; font-size:18px; }
+  .wrap { max-width:1000px; margin:0 auto; display:flex; flex-direction:column; gap:20px; }
+  .card { background:#fff; border-radius:14px; padding:24px; box-shadow:0 2px 10px rgba(0,0,0,.10); }
+  h1 { font-size:30px; margin:0; }
+  h2 { font-size:22px; margin:0 0 16px; }
+
+  label { display:flex; flex-direction:column; gap:6px; font-size:15px; font-weight:600; color:#4b5563; }
+  input, select { font-size:22px; height:56px; padding:0 14px; border:2px solid #cbd5e1; border-radius:10px; width:100%; background:#fff; }
+  input:focus, select:focus { outline:none; border-color:#2563eb; }
+  button { font-size:20px; height:56px; padding:0 22px; border:0; border-radius:10px; background:#2563eb; color:#fff; cursor:pointer; font-weight:600; }
+  button:hover { filter:brightness(1.1); }
+  button.grey { background:#6b7280; }
+  button.red { background:#dc2626; }
+
+  .grid4 { display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; align-items:end; }
+  .ze-box { height:56px; display:flex; align-items:center; justify-content:center; background:#e0ecff; border-radius:10px; font-size:20px; font-weight:700; color:#1d4ed8; }
+
+  .tabs { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+  .tab { height:48px; font-size:18px; background:#e5e7eb; color:#374151; }
+  .tab.active { background:#2563eb; color:#fff; }
+  .tab.plus { background:#16a34a; color:#fff; }
+
+  .namebar { display:grid; grid-template-columns:1fr auto; gap:16px; align-items:end; margin-bottom:20px; }
+  .addrow { display:grid; grid-template-columns:1fr 1fr 150px 150px; gap:16px; align-items:end; margin-bottom:22px; }
+
+  table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:20px; }
+  th, td { padding:14px 8px; text-align:center; border-bottom:1px solid #e5e7eb; }
+  th { background:#f3f4f6; font-size:15px; color:#4b5563; }
+  th:first-child, td:first-child { width:60px; }
+  th:last-child, td:last-child { width:80px; }
+  td.res { font-weight:800; color:#047857; }
+  button.del { height:40px; padding:0 14px; font-size:16px; }
+
+  .mean { margin-top:18px; padding:16px; background:#ecfdf5; border-radius:10px; font-size:24px; text-align:center; }
+  .empty { text-align:center; color:#9ca3af; padding:22px; }
+  .hint { font-size:14px; color:#6b7280; margin-top:12px; text-align:center; }
+
+  @media (max-width:760px) {
+    body { padding:12px; }
+    .grid4, .addrow, .namebar { grid-template-columns:1fr 1fr; }
+    .namebar { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card"><h1>Vernier Caliper Calculator</h1></div>
+
+  <div class="card">
+    <h2>Caliper settings (apply to all components)</h2>
+    <div class="grid4">
+      <label>Least count (mm)
+        <input id="lc" type="number" step="any" value="0.05">
+      </label>
+      <label>Zero error divisions
+        <input id="zdiv" type="number" step="any" value="4">
+      </label>
+      <label>Zero error type
+        <select id="zsign">
+          <option value="1">Positive (+)</option>
+          <option value="-1">Negative (−)</option>
+        </select>
+      </label>
+      <div class="ze-box">Zero error = <span id="zeVal">&nbsp;0.25</span>&nbsp;mm</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Components</h2>
+    <div class="tabs" id="tabs"></div>
+
+    <div class="namebar">
+      <label>Component name
+        <input id="cname" type="text">
+      </label>
+      <button class="red" id="delComp">Delete component</button>
+    </div>
+
+    <div class="addrow">
+      <label>Main scale reading (mm)
+        <input id="msr" type="number" step="any" placeholder="e.g. 24">
+      </label>
+      <label>Vernier scale reading (div)
+        <input id="vsr" type="number" step="any" placeholder="e.g. 7">
+      </label>
+      <button id="addBtn">Add</button>
+      <button class="grey" id="clearBtn">Clear</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>#</th><th>MSR (mm)</th><th>VSR (div)</th><th>VSR × LC (mm)</th><th>Corrected (mm)</th><th></th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="mean" id="mean"></div>
+    <div class="hint">Corrected = MSR + (VSR × least count) − zero error. Press Enter to add a reading.</div>
+  </div>
+
+  <div class="card">
+    <h2>Summary of all components</h2>
+    <table>
+      <thead><tr><th>#</th><th style="width:auto">Component</th><th>Readings</th><th>Mean (mm)</th></tr></thead>
+      <tbody id="summary"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const f = n => (Math.round(n * 1e6) / 1e6).toString();
+  const KEY = 'vernier_calc_v2';
+
+  let S = { lc: '0.05', zdiv: '5', zsign: '1', active: 0,
+            comps: [{ name: 'Component 1', data: [] }] };
+
+  try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && saved.comps && saved.comps.length) S = saved; } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  const lc = () => parseFloat(S.lc) || 0;
+  const zeroError = () => parseFloat(S.zsign) * (parseFloat(S.zdiv) || 0) * lc();
+  const corrected = d => d.msr + d.vsr * lc() - zeroError();
+  const meanOf = c => c.data.length ? c.data.reduce((a, d) => a + corrected(d), 0) / c.data.length : null;
+
+  function render() {
+    $('lc').value = S.lc; $('zdiv').value = S.zdiv; $('zsign').value = S.zsign;
+    $('zeVal').textContent = f(zeroError());
+
+    // tabs
+    $('tabs').innerHTML = '';
+    S.comps.forEach((c, i) => {
+      const b = document.createElement('button');
+      b.className = 'tab' + (i === S.active ? ' active' : '');
+      b.textContent = c.name || ('Component ' + (i + 1));
+      b.onclick = () => { S.active = i; save(); render(); };
+      $('tabs').appendChild(b);
+    });
+    const plus = document.createElement('button');
+    plus.className = 'tab plus'; plus.textContent = '+ Add component';
+    plus.onclick = () => {
+      S.comps.push({ name: 'Component ' + (S.comps.length + 1), data: [] });
+      S.active = S.comps.length - 1; save(); render(); $('msr').focus();
+    };
+    $('tabs').appendChild(plus);
+
+    // active component
+    const c = S.comps[S.active];
+    if (document.activeElement !== $('cname')) $('cname').value = c.name;
+
+    $('rows').innerHTML = '';
+    if (!c.data.length) {
+      $('rows').innerHTML = '<tr><td colspan="6" class="empty">No readings yet. Enter values above and press Add.</td></tr>';
+    }
+    c.data.forEach((d, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i + 1}</td><td>${f(d.msr)}</td><td>${f(d.vsr)}</td><td>${f(d.vsr * lc())}</td><td class="res">${f(corrected(d))}</td><td><button class="red del" data-i="${i}">✕</button></td>`;
+      $('rows').appendChild(tr);
+    });
+    const m = meanOf(c);
+    $('mean').innerHTML = m === null ? 'Mean: —' : `Mean of ${c.name || 'component'} (${c.data.length} readings): <b>${f(m)} mm</b>`;
+
+    // summary
+    $('summary').innerHTML = '';
+    S.comps.forEach((cc, i) => {
+      const mm = meanOf(cc);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i + 1}</td><td>${cc.name}</td><td>${cc.data.length}</td><td class="res">${mm === null ? '—' : f(mm)}</td>`;
+      $('summary').appendChild(tr);
+    });
+  }
+
+  function add() {
+    const msr = parseFloat($('msr').value), vsr = parseFloat($('vsr').value);
+    if (isNaN(msr) || isNaN(vsr)) return;
+    S.comps[S.active].data.push({ msr, vsr });
+    $('msr').value = ''; $('vsr').value = '';
+    $('msr').focus(); save(); render();
+  }
+
+  $('addBtn').onclick = add;
+  $('clearBtn').onclick = () => { S.comps[S.active].data = []; save(); render(); };
+  $('delComp').onclick = () => {
+    if (S.comps.length === 1) { S.comps[0] = { name: 'Component 1', data: [] }; }
+    else { S.comps.splice(S.active, 1); S.active = Math.max(0, S.active - 1); }
+    save(); render();
+  };
+  $('rows').onclick = e => {
+    if (e.target.dataset.i !== undefined) { S.comps[S.active].data.splice(+e.target.dataset.i, 1); save(); render(); }
+  };
+  $('cname').addEventListener('input', e => { S.comps[S.active].name = e.target.value; save(); render(); });
+  ['msr', 'vsr'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') add(); }));
+  $('lc').addEventListener('input', e => { S.lc = e.target.value; save(); render(); });
+  $('zdiv').addEventListener('input', e => { S.zdiv = e.target.value; save(); render(); });
+  $('zsign').addEventListener('input', e => { S.zsign = e.target.value; save(); render(); });
+
+  render();
+</script>
+</body>
+</html>
